@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -171,28 +169,14 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", DefaultEndpoint)
-	r.HandleFunc("/api/v1/signin", SigninEndpoint).Methods("POST")
-	r.HandleFunc("/api/v1/signup", SignupEndpoint).Methods("POST")
+	r.HandleFunc("/api/v1/private/signin", SigninEndpoint).Methods("POST")
+	r.HandleFunc("/api/v1/private/signup", SignupEndpoint).Methods("POST")
 
-	if os.Getenv("PROD") == "" {
-		if err := http.ListenAndServeTLS(":8443", "server.crt", "server.key", r); err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		certManager := autocert.Manager{
-			Prompt: autocert.AcceptTOS,
-			Cache:  autocert.DirCache("certs"),
-		}
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8080")
+	}
 
-		server := &http.Server{
-			Addr:    ":443",
-			Handler: r,
-			TLSConfig: &tls.Config{
-				GetCertificate: certManager.GetCertificate,
-			},
-		}
-
-		go http.ListenAndServe(":80", certManager.HTTPHandler(nil))
-		server.ListenAndServeTLS("", "")
+	if err := http.ListenAndServe(":"+os.Getenv("PORT"), r); err != nil {
+		log.Fatal(err)
 	}
 }

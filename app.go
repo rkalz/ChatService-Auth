@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,9 +10,12 @@ import (
 	"os"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/gorilla/mux"
 )
 
+// Result codes of operations
 const (
 	SignInSuccess  = 100
 	SignInFail     = 101
@@ -24,25 +25,28 @@ const (
 	BodyDecodeFail = 301
 )
 
+// RequestContent Describes the contents of a login/signup request
 type RequestContent struct {
 	User string `json:"user"`
 	Pass string `json:"pass"`
 }
 
+// Response sent back to the user
 type Response struct {
 	Code       int    `json:"code"`
 	SessionKey string `json:"session,omitempty"`
 }
 
+// StoredAccount Internal structure for stored account
 type StoredAccount struct {
 	User string
 	Hash string
-	Salt string
 }
 
 var sessions map[string]time.Time
 var users map[string]StoredAccount
 
+// RandomString Generates a random string of [A-Za-z0-9] of length n
 func RandomString(n int) string {
 	var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
@@ -53,15 +57,18 @@ func RandomString(n int) string {
 	return string(b)
 }
 
+// DefaultEndpoint ...
 func DefaultEndpoint(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Default")
 }
 
+// SigninEndpoint ...
 func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 	resp := Response{}
 
+	// Read contents of POST
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -72,6 +79,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Unmarshal contents into struct
 	request := RequestContent{}
 	if err = json.Unmarshal(body, &request); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -82,7 +90,8 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, exists := users[request.User]
+	// Check if user exists
+	acct, exists := users[request.User]
 	if !exists {
 		resp.Code = SignInFail
 		response, _ := json.Marshal(resp)
@@ -90,31 +99,33 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	saltedPass := request.Pass + user.Salt
-	hash := sha256.Sum256([]byte(saltedPass))
-	hashString := hex.EncodeToString(hash[:])
-
-	if hashString != user.Hash {
+	// Compare stored hash with password
+	compare := bcrypt.CompareHashAndPassword([]byte(acct.Hash), []byte(request.Pass))
+	if compare != nil {
 		resp.Code = SignInFail
 		response, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(response))
 		return
 	}
 
-	session := RandomString(16)
-	sessions[session] = time.Now()
+	// Generate new session
+	sessionID := RandomString(16)
+	sessions[sessionID] = time.Now()
 
+	// Send successful login
 	resp.Code = SignInSuccess
-	resp.SessionKey = session
+	resp.SessionKey = sessionID
 	response, _ := json.Marshal(resp)
 	fmt.Fprint(w, string(response))
 }
 
+// SignupEndpoint ...
 func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 	resp := Response{}
 
+	// Read contents of POST
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -125,6 +136,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Unmarshal intp struct
 	request := RequestContent{}
 	if err = json.Unmarshal(body, &request); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -135,6 +147,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if either user or password are blank
 	if request.User == "" || request.Pass == "" {
 		resp.Code = SignUpFail
 		response, _ := json.Marshal(resp)
@@ -142,6 +155,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if user already exists
 	if _, exists := users[request.User]; exists {
 		resp.Code = SignUpFail
 		response, _ := json.Marshal(resp)
@@ -149,15 +163,21 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := StoredAccount{}
-	user.User = request.User
+	// Create new account
+	acct := StoredAccount{}
+	acct.User = request.User
+	hash, err := bcrypt.GenerateFromPassword([]byte(request.Pass), bcrypt.DefaultCost)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		resp.Code = SignUpFail
+		response, _ := json.Marshal(resp)
+		fmt.Fprint(w, string(response))
+		return
+	}
 
-	user.Salt = RandomString(12)
-	saltedPass := request.Pass + user.Salt
-	hash := sha256.Sum256([]byte(saltedPass))
-	user.Hash = hex.EncodeToString(hash[:])
-
-	users[user.User] = user
+	// Success
+	acct.Hash = string(hash)
+	users[acct.User] = acct
 	resp.Code = SignUpSuccess
 	response, _ := json.Marshal(resp)
 	fmt.Fprint(w, string(response))

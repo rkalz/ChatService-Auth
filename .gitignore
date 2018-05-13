@@ -1,7 +1,2 @@
-*.pem
-*.srl
-*.key
-*.crt
-*.csr
-*.ext
-*.csr.cnf
+.vscode/
+debug

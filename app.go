@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
-	"time"
+
+	"github.com/ddliu/go-httpclient"
 
 	"github.com/gocql/gocql"
 
@@ -46,17 +46,9 @@ type StoredAccount struct {
 	Hash string
 }
 
-var sessions map[string]time.Time
-
-// RandomString Generates a random string of [A-Za-z0-9] of length n
-func RandomString(n int) string {
-	var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letter[rand.Intn(len(letter))]
-	}
-	return string(b)
+type SessionResponse struct {
+	Code      int    `json:"code"`
+	SessionID string `json:"session,omitempty"`
 }
 
 // DefaultEndpoint ...
@@ -120,13 +112,32 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate new session
-	sessionID := RandomString(16)
-	sessions[sessionID] = time.Now()
+	// Check if sessionID already exists
+	res, err := httpclient.Get("http://127.0.0.1:8081/api/v1/private/sessions/get/" + acct.UUID.String())
+	sessionResponseBytes, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	sessionResp := SessionResponse{}
+	err = json.Unmarshal(sessionResponseBytes, &sessionResp)
+	if sessionResp.Code == 100 {
+		resp.SessionKey = sessionResp.SessionID
+	} else {
+		// Generate new sessionID
+		res, err = httpclient.Post("http://127.0.0.1:8081/api/v1/private/sessions/add/"+acct.UUID.String(), map[string]string{})
+		sessionResponseBytes, err = ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		err = json.Unmarshal(sessionResponseBytes, &sessionResp)
+		if sessionResp.Code == 200 {
+			resp.SessionKey = sessionResp.SessionID
+		} else {
+			resp.Code = SignInFail
+			response, _ := json.Marshal(resp)
+			fmt.Fprint(w, string(response))
+			return
+		}
+	}
 
 	// Send successful login
 	resp.Code = SignInSuccess
-	resp.SessionKey = sessionID
 	response, _ := json.Marshal(resp)
 	fmt.Fprint(w, string(response))
 }
@@ -176,8 +187,8 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user already exists
 	var count int
-	if err := acctSess.Query(`SELECT count(*) FROM users WHERE username = ? ALLOW FILTERING`, request.User); err != nil || count > 0 {
-		w.WriteHeader(http.StatusInternalServerError)
+	if err := acctSess.Query(`SELECT count(*) FROM users WHERE username = ? ALLOW FILTERING`,
+		request.User); err != nil || count > 0 {
 		resp.Code = SignUpFail
 		response, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(response))
@@ -218,12 +229,16 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	sessions = make(map[string]time.Time)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", DefaultEndpoint)
 	r.HandleFunc("/api/v1/private/signin", SigninEndpoint).Methods("POST")
 	r.HandleFunc("/api/v1/private/signup", SignupEndpoint).Methods("POST")
+
+	httpclient.Defaults(httpclient.Map{
+		httpclient.OPT_USERAGENT: "ChatService Auth Server",
+		"Accept-Language":        "en-us",
+	})
 
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8080")

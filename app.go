@@ -9,12 +9,11 @@ import (
 	"os"
 
 	"github.com/ddliu/go-httpclient"
-
+	"github.com/go-redis/redis"
 	"github.com/gocql/gocql"
+	"github.com/gorilla/mux"
 
 	"golang.org/x/crypto/bcrypt"
-
-	"github.com/gorilla/mux"
 )
 
 // Result codes of operations
@@ -69,6 +68,20 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	acctSess, _ := acctCluster.CreateSession()
 	defer acctSess.Close()
 
+	// Connect to Redis
+	cache := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+	_, err := cache.Ping().Result()
+	if err != nil {
+		resp.Code = SignInFail
+		response, _ := json.Marshal(resp)
+		fmt.Fprint(w, string(response))
+		return
+	}
+
 	// Read contents of POST
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -91,9 +104,12 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user exists
+	// Check if user in cache, then check DB
 	acct := StoredAccount{}
-	if err := acctSess.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Consistency(gocql.One).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
+	val, err := cache.Get(request.User).Result()
+	if val != "" {
+		err = json.Unmarshal([]byte(val), &acct)
+	} else if err := acctSess.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Consistency(gocql.One).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
 		resp.Code = SignInFail
 		response, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(response))
@@ -102,6 +118,9 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	// Add back to cache
+	err = cache.Set(request.User, request, 0).Err()
 
 	// Compare stored hash with password
 	compare := bcrypt.CompareHashAndPassword([]byte(acct.Hash), []byte(request.Pass))
@@ -155,6 +174,20 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	acctSess, _ := acctCluster.CreateSession()
 	defer acctSess.Close()
 
+	// Connect to Redis
+	cache := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+	_, err := cache.Ping().Result()
+	if err != nil {
+		resp.Code = SignInFail
+		response, _ := json.Marshal(resp)
+		fmt.Fprint(w, string(response))
+		return
+	}
+
 	// Read contents of POST
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -187,8 +220,9 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user already exists
 	var count int
+	val, _ := cache.Get(request.User).Result()
 	if err := acctSess.Query(`SELECT count(*) FROM users WHERE username = ? ALLOW FILTERING`,
-		request.User); err != nil || count > 0 {
+		request.User); err != nil || count > 0 || val != "" {
 		resp.Code = SignUpFail
 		response, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(response))
@@ -220,6 +254,9 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
+
+	// Insert into cache
+	err = cache.Set(acct.User, acct, 0).Err()
 
 	resp.Code = SignUpSuccess
 	response, _ := json.Marshal(resp)

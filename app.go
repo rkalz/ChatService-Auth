@@ -62,7 +62,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctCluster := gocql.NewCluster("127.0.0.1", "127.0.0.2", "127.0.0.3")
+	acctCluster := gocql.NewCluster("127.0.0.1")
 	acctCluster.Keyspace = "accounts"
 	acctCluster.Consistency = gocql.Three
 	acctSess, _ := acctCluster.CreateSession()
@@ -120,7 +120,17 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add back to cache
-	err = cache.Set(request.User, request, 0).Err()
+	if val != "" {
+		userBytes, err := json.Marshal(acct)
+		err = cache.Set(acct.User, userBytes, 0).Err()
+		if err != nil {
+			resp.Code = SignInFail
+			response, _ := json.Marshal(resp)
+			fmt.Fprint(w, string(response))
+			log.Print(err)
+			return
+		}
+	}
 
 	// Compare stored hash with password
 	compare := bcrypt.CompareHashAndPassword([]byte(acct.Hash), []byte(request.Pass))

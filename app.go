@@ -9,46 +9,11 @@ import (
 	"os"
 
 	"github.com/ddliu/go-httpclient"
-	"github.com/go-redis/redis"
 	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
 
 	"golang.org/x/crypto/bcrypt"
 )
-
-// Result codes of operations
-const (
-	SignInSuccess  = 100
-	SignInFail     = 101
-	SignUpSuccess  = 200
-	SignUpFail     = 201
-	BodyReadFail   = 300
-	BodyDecodeFail = 301
-)
-
-// RequestContent Describes the contents of a login/signup request
-type RequestContent struct {
-	User string `json:"user"`
-	Pass string `json:"pass"`
-}
-
-// Response sent back to the user
-type Response struct {
-	Code       int    `json:"code"`
-	SessionKey string `json:"session,omitempty"`
-}
-
-// StoredAccount Internal structure for stored account
-type StoredAccount struct {
-	UUID gocql.UUID
-	User string
-	Hash string
-}
-
-type SessionResponse struct {
-	Code      int    `json:"code"`
-	SessionID string `json:"session,omitempty"`
-}
 
 // DefaultEndpoint ...
 func DefaultEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -57,28 +22,18 @@ func DefaultEndpoint(w http.ResponseWriter, r *http.Request) {
 
 // SigninEndpoint ...
 func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
+	SetHeaders(w)
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctCluster := gocql.NewCluster("127.0.0.1")
-	acctCluster.Keyspace = "accounts"
-	acctCluster.Consistency = gocql.Three
-	acctSess, _ := acctCluster.CreateSession()
+	acctSess := CassConnect("accounts")
 	defer acctSess.Close()
 
 	// Connect to Redis
-	cache := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-	_, err := cache.Ping().Result()
+	cache, err := RedisConnect(0)
 	if err != nil {
-		resp.Code = SignInFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		w.WriteHeader(http.StatusInternalServerError)
+		ResponseNoData(w, SignInFail)
 		return
 	}
 
@@ -86,9 +41,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		resp.Code = BodyReadFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, BodyReadFail)
 		log.Print(err)
 		return
 	}
@@ -97,10 +50,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	request := RequestContent{}
 	if err = json.Unmarshal(body, &request); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		resp.Code = BodyDecodeFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
-		log.Print(err)
+		ResponseNoData(w, BodyDecodeFail)
 		return
 	}
 
@@ -110,9 +60,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	if val != "" {
 		err = json.Unmarshal([]byte(val), &acct)
 	} else if err := acctSess.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Consistency(gocql.One).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
-		resp.Code = SignInFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, SignInFail)
 		if err != gocql.ErrNotFound {
 			log.Print(err)
 		}
@@ -124,10 +72,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		userBytes, err := json.Marshal(acct)
 		err = cache.Set(acct.User, userBytes, 0).Err()
 		if err != nil {
-			resp.Code = SignInFail
-			response, _ := json.Marshal(resp)
-			fmt.Fprint(w, string(response))
-			log.Print(err)
+			ResponseNoData(w, SignInFail)
 			return
 		}
 	}
@@ -135,9 +80,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	// Compare stored hash with password
 	compare := bcrypt.CompareHashAndPassword([]byte(acct.Hash), []byte(request.Pass))
 	if compare != nil {
-		resp.Code = SignInFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, SignInFail)
 		return
 	}
 
@@ -158,9 +101,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		if sessionResp.Code == 200 {
 			resp.SessionKey = sessionResp.SessionID
 		} else {
-			resp.Code = SignInFail
-			response, _ := json.Marshal(resp)
-			fmt.Fprint(w, string(response))
+			ResponseNoData(w, SignInFail)
 			return
 		}
 	}
@@ -173,28 +114,17 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 
 // SignupEndpoint ...
 func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
+	SetHeaders(w)
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctCluster := gocql.NewCluster("127.0.0.1", "127.0.0.2", "127.0.0.3")
-	acctCluster.Keyspace = "accounts"
-	acctCluster.Consistency = gocql.Three
-	acctSess, _ := acctCluster.CreateSession()
+	acctSess := CassConnect("accounts")
 	defer acctSess.Close()
 
 	// Connect to Redis
-	cache := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-	_, err := cache.Ping().Result()
+	cache, err := RedisConnect(0)
 	if err != nil {
-		resp.Code = SignInFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, SignInFail)
 		return
 	}
 
@@ -202,9 +132,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		resp.Code = BodyReadFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, BodyReadFail)
 		log.Print(err)
 		return
 	}
@@ -213,18 +141,14 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	request := RequestContent{}
 	if err = json.Unmarshal(body, &request); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		resp.Code = BodyDecodeFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, BodyDecodeFail)
 		log.Print(err)
 		return
 	}
 
 	// Check if either user or password are blank
 	if request.User == "" || request.Pass == "" {
-		resp.Code = SignUpFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, SignUpFail)
 		return
 	}
 
@@ -233,9 +157,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	val, _ := cache.Get(request.User).Result()
 	if err := acctSess.Query(`SELECT count(*) FROM users WHERE username = ? ALLOW FILTERING`,
 		request.User); err != nil || count > 0 || val != "" {
-		resp.Code = SignUpFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, SignUpFail)
 		log.Print(err)
 		return
 	}
@@ -246,9 +168,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(request.Pass), bcrypt.DefaultCost)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		resp.Code = SignUpFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, SignUpFail)
 		return
 	}
 
@@ -258,9 +178,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	if err := acctSess.Query(`INSERT INTO users (userid, username, hash) VALUES (?, ?, ?)`,
 		uid, acct.User, acct.Hash).Exec(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		resp.Code = SignUpFail
-		response, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(response))
+		ResponseNoData(w, SignUpFail)
 		log.Print(err)
 		return
 	}
@@ -271,8 +189,6 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp.Code = SignUpSuccess
 	response, _ := json.Marshal(resp)
 	fmt.Fprint(w, string(response))
-
-	acctSess.Close()
 }
 
 func main() {

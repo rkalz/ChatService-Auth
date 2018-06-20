@@ -85,7 +85,11 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if sessionID already exists
-	res, err := httpclient.Get("http://127.0.0.1:8081/api/v1/private/sessions/get/" + acct.UUID.String())
+	sessionRequestBody := make(map[string]string)
+	sessionRequestBody["uuid"] = acct.UUID.String()
+	sessionRequestBody["origin"] = r.Header.Get("User-Agent")
+
+	res, err := httpclient.PostJson("http://127.0.0.1:8081/api/v1/private/sessions/check/", sessionRequestBody)
 	sessionResponseBytes, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	sessionResp := SessionResponse{}
@@ -94,7 +98,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		resp.SessionKey = sessionResp.SessionID
 	} else {
 		// Generate new sessionID
-		res, err = httpclient.Post("http://127.0.0.1:8081/api/v1/private/sessions/add/"+acct.UUID.String(), map[string]string{})
+		res, err = httpclient.PostJson("http://127.0.0.1:8081/api/v1/private/sessions/add/", sessionRequestBody)
 		sessionResponseBytes, err = ioutil.ReadAll(res.Body)
 		res.Body.Close()
 		err = json.Unmarshal(sessionResponseBytes, &sessionResp)

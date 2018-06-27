@@ -43,6 +43,12 @@ type SessionResponse struct {
 	SessionID string `json:"session,omitempty"`
 }
 
+type SignOutRequest struct {
+	Origin    string `json:"origin"`
+	User      string `json:"username"`
+	SessionID string `json:"session"`
+}
+
 func SetHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")

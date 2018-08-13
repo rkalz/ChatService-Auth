@@ -1,1 +1,2 @@
-docker run -d -it -p 8080:8080 --name=signin logon go run app.go utils.go
+docker run -d -it -p 8080:8080 \
+    --name=signin logon go run app.go utils.go

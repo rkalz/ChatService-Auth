@@ -26,7 +26,13 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess := CassConnect("accounts")
+	acctSess, err := CassConnect("accounts")
+	if err != nil {
+		fmt.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		ResponseNoData(w, SignInFail)
+		return
+	}
 	defer acctSess.Close()
 
 	// Connect to Redis
@@ -90,7 +96,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	sessionRequestBody["origin"] = r.Header.Get("User-Agent")
 
 	// Should try to change to GET
-	res, err := httpclient.PostJson("http://127.0.0.1:8081/api/v1/private/sessions/check/", sessionRequestBody)
+	res, err := httpclient.PostJson("http://host.docker.internal:8081/api/v1/private/sessions/check/", sessionRequestBody)
 	sessionResponseBytes, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	sessionResp := SessionResponse{}
@@ -99,7 +105,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		resp.SessionKey = sessionResp.SessionID
 	} else {
 		// Generate new sessionID
-		res, err = httpclient.PostJson("http://127.0.0.1:8081/api/v1/private/sessions/add/", sessionRequestBody)
+		res, err = httpclient.PostJson("http://host.docker.internal:8081/api/v1/private/sessions/add/", sessionRequestBody)
 		sessionResponseBytes, err = ioutil.ReadAll(res.Body)
 		res.Body.Close()
 		err = json.Unmarshal(sessionResponseBytes, &sessionResp)
@@ -123,7 +129,12 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess := CassConnect("accounts")
+	acctSess, err := CassConnect("accounts")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		ResponseNoData(w, SignInFail)
+		return
+	}
 	defer acctSess.Close()
 
 	// Connect to Redis
@@ -202,7 +213,12 @@ func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess := CassConnect("accounts")
+	acctSess, err := CassConnect("accounts")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		ResponseNoData(w, SignInFail)
+		return
+	}
 	defer acctSess.Close()
 
 	// Connect to Redis

@@ -6,7 +6,7 @@ RUN go get github.com/ddliu/go-httpclient
 RUN go get github.com/gorilla/mux
 RUN go get golang.org/x/crypto/bcrypt
 
-EXPOSE 8080
+EXPOSE 6379 8080 9042 9142 9160
 
 RUN mkdir -p /src/rofael.net/logon
 WORKDIR /src/rofael.net/logon

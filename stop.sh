@@ -1,0 +1,1 @@
+docker stop signin && docker rm signin

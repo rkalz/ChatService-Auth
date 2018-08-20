@@ -57,7 +57,7 @@ func SetHeaders(w http.ResponseWriter) {
 func CassConnect(keyspace string) (*gocql.Session, error) {
 	acctCluster := gocql.NewCluster("host.docker.internal")
 	acctCluster.Keyspace = keyspace
-	acctCluster.Consistency = gocql.Three
+	acctCluster.Consistency = gocql.One
 	acctSess, err := acctCluster.CreateSession()
 	return acctSess, err
 }

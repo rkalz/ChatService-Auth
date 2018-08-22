@@ -9,12 +9,14 @@ import (
 	"os"
 
 	"github.com/ddliu/go-httpclient"
+	"github.com/go-redis/redis"
 	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
-	"github.com/go-redis/redis"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+// TODO: Move all session stuff to the frontend service
 
 // DefaultEndpoint ...
 func DefaultEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +113,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	sessionRequestBody["origin"] = r.Header.Get("User-Agent")
 
 	// Should try to change to GET
-	res, err := httpclient.PostJson("http://host.docker.internal:8081/api/v1/private/sessions/check/", sessionRequestBody)
+	res, err := httpclient.PostJson("http://sess/api/v1/private/sessions/check/", sessionRequestBody)
 	sessionResponseBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 
@@ -128,7 +130,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		resp.SessionKey = sessionResp.SessionID
 	} else {
 		// Generate new sessionID
-		res, err = httpclient.PostJson("http://host.docker.internal:8081/api/v1/private/sessions/add/", sessionRequestBody)
+		res, err = httpclient.PostJson("http://sess/api/v1/private/sessions/add/", sessionRequestBody)
 		if err != nil {
 			ResponseNoData(w, SignInFail)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -330,7 +332,7 @@ func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 	deactiveRequestBody["origin"] = request.Origin
 	deactiveRequestBody["session"] = request.SessionID
 
-	res, err := httpclient.PostJson("http://host.docker.internal:8081/api/v1/private/sessions/del/", deactiveRequestBody)
+	res, err := httpclient.PostJson("http://sess/api/v1/private/sessions/del/", deactiveRequestBody)
 	resBytes, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	sessResp := SessionResponse{}

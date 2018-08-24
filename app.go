@@ -113,7 +113,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	sessionRequestBody["origin"] = r.Header.Get("User-Agent")
 
 	// Should try to change to GET
-	res, err := httpclient.PostJson("http://sess/api/v1/private/sessions/check/", sessionRequestBody)
+	res, err := httpclient.PostJson("http://sess:8080/api/v1/private/sessions/check/", sessionRequestBody)
 	sessionResponseBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 
@@ -130,7 +130,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		resp.SessionKey = sessionResp.SessionID
 	} else {
 		// Generate new sessionID
-		res, err = httpclient.PostJson("http://sess/api/v1/private/sessions/add/", sessionRequestBody)
+		res, err = httpclient.PostJson("http://sess:8080/api/v1/private/sessions/add/", sessionRequestBody)
 		if err != nil {
 			ResponseNoData(w, SignInFail)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -332,7 +332,7 @@ func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 	deactiveRequestBody["origin"] = request.Origin
 	deactiveRequestBody["session"] = request.SessionID
 
-	res, err := httpclient.PostJson("http://sess/api/v1/private/sessions/del/", deactiveRequestBody)
+	res, err := httpclient.PostJson("http://sess:8080/api/v1/private/sessions/del/", deactiveRequestBody)
 	resBytes, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	sessResp := SessionResponse{}
@@ -359,7 +359,7 @@ func main() {
 	r.HandleFunc("/api/v1/private/signout", SignoutEndpoint).Methods("POST")
 
 	httpclient.Defaults(httpclient.Map{
-		httpclient.OPT_USERAGENT: "ChatService Auth Server",
+		httpclient.OPT_USERAGENT: "ChatService Auth Server:" + os.Hostname(),
 		"Accept-Language":        "en-us",
 	})
 

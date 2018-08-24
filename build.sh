@@ -1,1 +1,1 @@
-docker build -t logon .
+docker build -t  .

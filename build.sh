@@ -1,1 +1,1 @@
-docker build -t  .
+docker build -t auth .

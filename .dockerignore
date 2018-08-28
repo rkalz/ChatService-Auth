@@ -1,0 +1,6 @@
+.vscode/
+build.sh
+Dockerfile
+restart.sh
+start.sh
+stop.sh

@@ -50,12 +50,12 @@ type SignOutRequest struct {
 }
 
 func SetHeaders(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 }
 
-func CassConnect(keyspace string) (*gocql.Session, error) {
-	acctCluster := gocql.NewCluster("cass-master")
+func ConnectToCassandra(keyspace string) (*gocql.Session, error) {
+	acctCluster := gocql.NewCluster("cass-master", "cass-1", "cass-2")
 	acctCluster.Keyspace = keyspace
 	acctCluster.Consistency = gocql.One
 	acctSess, err := acctCluster.CreateSession()

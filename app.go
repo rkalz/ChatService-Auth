@@ -29,7 +29,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess, err := CassConnect("accounts")
+	acctSess, err := ConnectToCassandra("accounts")
 	if err != nil {
 		log.Print("Cassandra connection failed")
 		log.Print(err)
@@ -113,7 +113,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	sessionRequestBody["origin"] = r.Header.Get("User-Agent")
 
 	// Should try to change to GET
-	res, err := httpclient.PostJson("http://sess:8080/api/v1/private/sessions/check/", sessionRequestBody)
+	res, err := httpclient.PostJson("http://ilb/sessions/exists", sessionRequestBody)
 	sessionResponseBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 
@@ -130,7 +130,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		resp.SessionKey = sessionResp.SessionID
 	} else {
 		// Generate new sessionID
-		res, err = httpclient.PostJson("http://sess:8080/api/v1/private/sessions/add/", sessionRequestBody)
+		res, err = httpclient.PostJson("http://ilb/sessions/add", sessionRequestBody)
 		if err != nil {
 			ResponseNoData(w, SignInFail)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -178,7 +178,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess, err := CassConnect("accounts")
+	acctSess, err := ConnectToCassandra("accounts")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignInFail)
@@ -276,7 +276,7 @@ func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess, err := CassConnect("accounts")
+	acctSess, err := ConnectToCassandra("accounts")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignInFail)
@@ -332,7 +332,7 @@ func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 	deactiveRequestBody["origin"] = request.Origin
 	deactiveRequestBody["session"] = request.SessionID
 
-	res, err := httpclient.PostJson("http://sess:8080/api/v1/private/sessions/del/", deactiveRequestBody)
+	res, err := httpclient.PostJson("http://ilb/sessions/remove", deactiveRequestBody)
 	resBytes, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	sessResp := SessionResponse{}
@@ -354,17 +354,18 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", DefaultEndpoint)
-	r.HandleFunc("/api/v1/private/signin", SigninEndpoint).Methods("POST")
-	r.HandleFunc("/api/v1/private/signup", SignupEndpoint).Methods("POST")
-	r.HandleFunc("/api/v1/private/signout", SignoutEndpoint).Methods("POST")
+	r.HandleFunc("/api/v1/private/auth/signin", SigninEndpoint).Methods("POST")
+	r.HandleFunc("/api/v1/private/auth/signup", SignupEndpoint).Methods("POST")
+	r.HandleFunc("/api/v1/private/auth/signout", SignoutEndpoint).Methods("POST")
 
+	hostname, _ := os.Hostname()
 	httpclient.Defaults(httpclient.Map{
-		httpclient.OPT_USERAGENT: "ChatService Auth Server:" + os.Hostname(),
+		httpclient.OPT_USERAGENT: "ChatService Auth Server: " + hostname,
 		"Accept-Language":        "en-us",
 	})
 
 	if os.Getenv("PORT") == "" {
-		os.Setenv("PORT", "8080")
+		os.Setenv("PORT", "80")
 	}
 
 	if err := http.ListenAndServe(":"+os.Getenv("PORT"), r); err != nil {

@@ -29,7 +29,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess, err := ConnectToCassandra("accounts")
+	dbSession, err := ConnectToCassandra("accounts")
 	if err != nil {
 		log.Print("Cassandra connection failed")
 		log.Print(err)
@@ -37,10 +37,10 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		ResponseNoData(w, SignInFail)
 		return
 	}
-	defer acctSess.Close()
+	defer dbSession.Close()
 
 	// Connect to Redis
-	cache, err := RedisConnect(0)
+	cache, err := ConnectToRedis(0)
 	if err != nil {
 		log.Print("Redis connection failed")
 		log.Print(err)
@@ -71,10 +71,12 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user in cache, then check DB
 	acct := StoredAccount{}
-	val, err := cache.Get(request.User).Result()
-	if val != "" {
-		err = json.Unmarshal([]byte(val), &acct)
-	} else if err := acctSess.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
+	cachedBytes, err := cache.Get(request.User).Result()
+	retrievedFromCache := false
+	if cachedBytes != "" {
+		err = json.Unmarshal([]byte(cachedBytes), &acct)
+		retrievedFromCache = true
+	} else if err := dbSession.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
 		ResponseNoData(w, SignInFail)
 		if err != gocql.ErrNotFound {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -85,7 +87,7 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add back to cache
-	if val != "" {
+	if !retrievedFromCache {
 		userBytes, err := json.Marshal(acct)
 		err = cache.Set(acct.User, userBytes, 0).Err()
 		if err != nil {
@@ -107,64 +109,65 @@ func SigninEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO: Move to frontend
 	// Check if sessionID already exists
-	sessionRequestBody := make(map[string]string)
-	sessionRequestBody["uuid"] = acct.UUID.String()
-	sessionRequestBody["origin"] = r.Header.Get("User-Agent")
+	// sessionRequestBody := make(map[string]string)
+	// sessionRequestBody["uuid"] = acct.UUID.String()
+	// sessionRequestBody["origin"] = r.Header.Get("User-Agent")
 
 	// Should try to change to GET
-	res, err := httpclient.PostJson("http://ilb/sessions/exists", sessionRequestBody)
-	sessionResponseBytes, err := ioutil.ReadAll(res.Body)
-	if err != nil {
+	// res, err := httpclient.PostJson("http://ilb/sessions/exists", sessionRequestBody)
+	// sessionResponseBytes, err := ioutil.ReadAll(res.Body)
+	// if err != nil {
 
-	}
+	// }
 
-	res.Body.Close()
-	sessionResp := SessionResponse{}
-	err = json.Unmarshal(sessionResponseBytes, &sessionResp)
-	if err != nil {
+	// res.Body.Close()
+	// sessionResp := SessionResponse{}
+	// err = json.Unmarshal(sessionResponseBytes, &sessionResp)
+	// if err != nil {
 
-	}
+	// }
 
-	if sessionResp.Code == 100 {
-		resp.SessionKey = sessionResp.SessionID
-	} else {
-		// Generate new sessionID
-		res, err = httpclient.PostJson("http://ilb/sessions/add", sessionRequestBody)
-		if err != nil {
-			ResponseNoData(w, SignInFail)
-			w.WriteHeader(http.StatusInternalServerError)
-			log.Print("HTTP request error")
-			log.Print(err)
-			return
-		}
+	// if sessionResp.Code == 100 {
+	// 	resp.SessionKey = sessionResp.SessionID
+	// } else {
+	// Generate new sessionID
+	// 	res, err = httpclient.PostJson("http://ilb/sessions/add", sessionRequestBody)
+	// 	if err != nil {
+	// 		ResponseNoData(w, SignInFail)
+	// 		w.WriteHeader(http.StatusInternalServerError)
+	// 		log.Print("HTTP request error")
+	// 		log.Print(err)
+	// 		return
+	// 	}
 
-		sessionResponseBytes, err = ioutil.ReadAll(res.Body)
-		if err != nil {
-			ResponseNoData(w, SignInFail)
-			w.WriteHeader(http.StatusInternalServerError)
-			log.Print("HTTP response read error")
-			log.Print(err)
-			return
-		}
+	// 	sessionResponseBytes, err = ioutil.ReadAll(res.Body)
+	// 	if err != nil {
+	// 		ResponseNoData(w, SignInFail)
+	// 		w.WriteHeader(http.StatusInternalServerError)
+	// 		log.Print("HTTP response read error")
+	// 		log.Print(err)
+	// 		return
+	// 	}
 
-		res.Body.Close()
-		err = json.Unmarshal(sessionResponseBytes, &sessionResp)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			ResponseNoData(w, SignInFail)
-			log.Print("HTTP response unmarshal error")
-			log.Print(err)
-			return
-		}
+	// 	res.Body.Close()
+	// 	err = json.Unmarshal(sessionResponseBytes, &sessionResp)
+	// 	if err != nil {
+	// 		w.WriteHeader(http.StatusInternalServerError)
+	// 		ResponseNoData(w, SignInFail)
+	// 		log.Print("HTTP response unmarshal error")
+	// 		log.Print(err)
+	// 		return
+	// 	}
 
-		if sessionResp.Code == 200 {
-			resp.SessionKey = sessionResp.SessionID
-		} else {
-			ResponseNoData(w, SignInFail)
-			return
-		}
-	}
+	// 	if sessionResp.Code == 200 {
+	// 		resp.SessionKey = sessionResp.SessionID
+	// 	} else {
+	// 		ResponseNoData(w, SignInFail)
+	// 		return
+	// 	}
+	// }
 
 	// Send successful login
 	resp.Code = SignInSuccess
@@ -178,7 +181,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess, err := ConnectToCassandra("accounts")
+	dbSession, err := ConnectToCassandra("accounts")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignInFail)
@@ -186,10 +189,10 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
-	defer acctSess.Close()
+	defer dbSession.Close()
 
 	// Connect to Redis
-	cache, err := RedisConnect(0)
+	cache, err := ConnectToRedis(0)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignInFail)
@@ -231,7 +234,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 		log.Print("Redis query failed")
 		log.Print(err)
 	}
-	if err := acctSess.Query(`SELECT count(*) FROM users WHERE username = ? ALLOW FILTERING`,
+	if err := dbSession.Query(`SELECT count(*) FROM users WHERE username = ? ALLOW FILTERING`,
 		request.User).Scan(&count); err != nil || count > 0 || val != "" {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignUpFail)
@@ -254,7 +257,7 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	// Insert into database
 	acct.Hash = string(hash)
 	uid, _ := gocql.RandomUUID()
-	if err := acctSess.Query(`INSERT INTO users (userid, username, hash) VALUES (?, ?, ?)`,
+	if err := dbSession.Query(`INSERT INTO users (userid, username, hash) VALUES (?, ?, ?)`,
 		uid, acct.User, acct.Hash).Exec(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignUpFail)
@@ -270,23 +273,23 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, string(response))
 }
 
-// SignoutEndpoint
+// SignoutEndpoint DEPRECATED
 func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 	SetHeaders(w)
 	resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	acctSess, err := ConnectToCassandra("accounts")
+	dbSession, err := ConnectToCassandra("accounts")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignInFail)
 		log.Print(err)
 		return
 	}
-	defer acctSess.Close()
+	defer dbSession.Close()
 
 	// Connect to Redis
-	cache, err := RedisConnect(0)
+	cache, err := ConnectToRedis(0)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		ResponseNoData(w, SignInFail)
@@ -317,7 +320,7 @@ func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 	val, err := cache.Get(request.User).Result()
 	if val != "" {
 		err = json.Unmarshal([]byte(val), &acct)
-	} else if err := acctSess.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
+	} else if err := dbSession.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
 		ResponseNoData(w, SignInFail)
 		if err != gocql.ErrNotFound {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -326,6 +329,7 @@ func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO: Move to frontend
 	// Send session deactivation request
 	deactiveRequestBody := make(map[string]string)
 	deactiveRequestBody["uuid"] = acct.UUID.String()
@@ -356,7 +360,7 @@ func main() {
 	r.HandleFunc("/", DefaultEndpoint)
 	r.HandleFunc("/api/v1/private/auth/signin", SigninEndpoint).Methods("POST")
 	r.HandleFunc("/api/v1/private/auth/signup", SignupEndpoint).Methods("POST")
-	r.HandleFunc("/api/v1/private/auth/signout", SignoutEndpoint).Methods("POST")
+	// r.HandleFunc("/api/v1/private/auth/signout", SignoutEndpoint).Methods("POST")
 
 	hostname, _ := os.Hostname()
 	httpclient.Defaults(httpclient.Map{

@@ -38,31 +38,20 @@ type StoredAccount struct {
 	Hash string
 }
 
-type SessionResponse struct {
-	Code      int    `json:"code"`
-	SessionID string `json:"session,omitempty"`
-}
-
-type SignOutRequest struct {
-	Origin    string `json:"origin"`
-	User      string `json:"username"`
-	SessionID string `json:"session"`
-}
-
 func SetHeaders(w http.ResponseWriter) {
 	// w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 }
 
 func ConnectToCassandra(keyspace string) (*gocql.Session, error) {
-	acctCluster := gocql.NewCluster("cass-master", "cass-1", "cass-2")
-	acctCluster.Keyspace = keyspace
-	acctCluster.Consistency = gocql.One
-	acctSess, err := acctCluster.CreateSession()
-	return acctSess, err
+	cluster := gocql.NewCluster("cass-master", "cass-1", "cass-2")
+	cluster.Keyspace = keyspace
+	cluster.Consistency = gocql.One
+	session, err := cluster.CreateSession()
+	return session, err
 }
 
-func RedisConnect(db int) (*redis.Client, error) {
+func ConnectToRedis(db int) (*redis.Client, error) {
 	cache := redis.NewClient(&redis.Options{
 		Addr:     "redis-master:6379",
 		Password: "",

@@ -1,5 +1,8 @@
 FROM golang:1.11-alpine
 
+RUN apk update && apk upgrade && \
+    apk add --no-cache bash git openssh
+
 RUN go get github.com/go-redis/redis
 RUN go get github.com/gocql/gocql
 RUN go get github.com/ddliu/go-httpclient

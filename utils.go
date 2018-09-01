@@ -44,7 +44,7 @@ func SetHeaders(w http.ResponseWriter) {
 }
 
 func ConnectToCassandra(keyspace string) (*gocql.Session, error) {
-	cluster := gocql.NewCluster("cass-master", "cass-1", "cass-2")
+	cluster := gocql.NewCluster("cass-master")
 	cluster.Keyspace = keyspace
 	cluster.Consistency = gocql.One
 	session, err := cluster.CreateSession()

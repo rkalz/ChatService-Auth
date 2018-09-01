@@ -275,83 +275,83 @@ func SignupEndpoint(w http.ResponseWriter, r *http.Request) {
 
 // SignoutEndpoint DEPRECATED
 func SignoutEndpoint(w http.ResponseWriter, r *http.Request) {
-	SetHeaders(w)
-	resp := Response{}
+	// SetHeaders(w)
+	// resp := Response{}
 
 	// Connect to Cassandra cluster and get session
-	dbSession, err := ConnectToCassandra("accounts")
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		ResponseNoData(w, SignInFail)
-		log.Print(err)
-		return
-	}
-	defer dbSession.Close()
+	// dbSession, err := ConnectToCassandra("accounts")
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	ResponseNoData(w, SignInFail)
+	// 	log.Print(err)
+	// 	return
+	// }
+	// defer dbSession.Close()
 
 	// Connect to Redis
-	cache, err := ConnectToRedis(0)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		ResponseNoData(w, SignInFail)
-		log.Print(err)
-		return
-	}
+	// cache, err := ConnectToRedis(0)
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	ResponseNoData(w, SignInFail)
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	// Read contents of POST
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		ResponseNoData(w, BodyReadFail)
-		log.Print(err)
-		return
-	}
+	// body, err := ioutil.ReadAll(r.Body)
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusBadRequest)
+	// 	ResponseNoData(w, BodyReadFail)
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	// Unmarshal into struct
-	request := SignOutRequest{}
-	if err = json.Unmarshal(body, &request); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		ResponseNoData(w, BodyDecodeFail)
-		log.Print(err)
-		return
-	}
+	// request := SignOutRequest{}
+	// if err = json.Unmarshal(body, &request); err != nil {
+	// 	w.WriteHeader(http.StatusBadRequest)
+	// 	ResponseNoData(w, BodyDecodeFail)
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	// Get account from username
-	acct := StoredAccount{}
-	val, err := cache.Get(request.User).Result()
-	if val != "" {
-		err = json.Unmarshal([]byte(val), &acct)
-	} else if err := dbSession.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
-		ResponseNoData(w, SignInFail)
-		if err != gocql.ErrNotFound {
-			w.WriteHeader(http.StatusInternalServerError)
-			log.Print(err)
-		}
-		return
-	}
+	// acct := StoredAccount{}
+	// val, err := cache.Get(request.User).Result()
+	// if val != "" {
+	// 	err = json.Unmarshal([]byte(val), &acct)
+	// } else if err := dbSession.Query(`SELECT userid, username, hash FROM users WHERE username = ? ALLOW FILTERING`, request.User).Scan(&acct.UUID, &acct.User, &acct.Hash); err != nil {
+	// 	ResponseNoData(w, SignInFail)
+	// 	if err != gocql.ErrNotFound {
+	// 		w.WriteHeader(http.StatusInternalServerError)
+	// 		log.Print(err)
+	// 	}
+	// 	return
+	// }
 
 	// TODO: Move to frontend
 	// Send session deactivation request
-	deactiveRequestBody := make(map[string]string)
-	deactiveRequestBody["uuid"] = acct.UUID.String()
-	deactiveRequestBody["origin"] = request.Origin
-	deactiveRequestBody["session"] = request.SessionID
+	// deactiveRequestBody := make(map[string]string)
+	// deactiveRequestBody["uuid"] = acct.UUID.String()
+	// deactiveRequestBody["origin"] = request.Origin
+	// deactiveRequestBody["session"] = request.SessionID
 
-	res, err := httpclient.PostJson("http://ilb/sessions/remove", deactiveRequestBody)
-	resBytes, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
-	sessResp := SessionResponse{}
-	err = json.Unmarshal(resBytes, &sessResp)
-	if sessResp.Code == 301 || err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		ResponseNoData(w, BodyDecodeFail)
-		log.Print(err)
-		return
-	}
+	// res, err := httpclient.PostJson("http://ilb/sessions/remove", deactiveRequestBody)
+	// resBytes, err := ioutil.ReadAll(res.Body)
+	// res.Body.Close()
+	// sessResp := SessionResponse{}
+	// err = json.Unmarshal(resBytes, &sessResp)
+	// if sessResp.Code == 301 || err != nil {
+	// 	w.WriteHeader(http.StatusBadRequest)
+	// 	ResponseNoData(w, BodyDecodeFail)
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	// Send Response
-	resp.Code = SignUpSuccess
-	response, _ := json.Marshal(resp)
-	fmt.Fprint(w, string(response))
+	// resp.Code = SignUpSuccess
+	// response, _ := json.Marshal(resp)
+	// fmt.Fprint(w, string(response))
 }
 
 func main() {
